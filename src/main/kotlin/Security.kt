@@ -2,20 +2,18 @@ package com.example
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.server.plugins.cors.routing.*
 
 fun Application.configureSecurity() {
-    // Please read the jwt property from the config file if you are using EngineMain
     val jwtAudience = "jwt-audience"
     val jwtDomain = "https://jwt-provider-domain/"
     val jwtRealm = "ktor sample app"
-    val jwtSecret = "secret"
+    val jwtSecret = "your-secret-key-change-in-production-min-256-bits-long"
+
     authentication {
         jwt {
             realm = jwtRealm
@@ -27,8 +25,23 @@ fun Application.configureSecurity() {
                     .build()
             )
             validate { credential ->
-                if (credential.payload.audience.contains(jwtAudience)) JWTPrincipal(credential.payload) else null
+                if (credential.payload.audience.contains(jwtAudience)) {
+                    JWTPrincipal(credential.payload)
+                } else {
+                    null
+                }
             }
         }
+    }
+
+    install(CORS) {
+        anyHost()
+        allowHeader(HttpHeaders.ContentType)
+        allowHeader(HttpHeaders.Authorization)
+        allowMethod(HttpMethod.Get)
+        allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Delete)
+        allowMethod(HttpMethod.Options)
     }
 }
