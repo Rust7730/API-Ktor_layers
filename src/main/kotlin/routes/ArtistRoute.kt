@@ -1,11 +1,11 @@
 package com.example.routes
 
-import com.example.model.ArtistRequest
 import com.example.model.ArtistResponse
 import com.example.model.ErrorResponse
 import com.example.model.MessageResponse
 import com.example.service.ArtistService
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
@@ -15,205 +15,152 @@ import io.ktor.server.routing.*
 import java.util.*
 
 fun Route.artistRoutes(artistService: ArtistService) {
-    val artistService = ArtistService()
-
     route("/artists") {
 
-        // GET /artists - Obtener todos los artistas (público)
+        // GET
         get {
             try {
                 val artists = artistService.getAll()
-                val response = artists.map { artist ->
-                    ArtistResponse(
-                        id = artist.id.toString(),
-                        name = artist.name,
-                        genre = artist.genre,
-                        image = artist.image
-                    )
-                }
-                call.respond(HttpStatusCode.OK, response)
+                call.respond(HttpStatusCode.OK, artists)
             } catch (e: Exception) {
-                call.respond(
-                    HttpStatusCode.InternalServerError,
-                    ErrorResponse("Error al obtener artistas: ${e.message}")
-                )
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Error al listar: ${e.message}"))
             }
         }
 
-        // Obtener un artista por ID (público)
+        // GET id
         get("/{id}") {
             try {
-                val id = call.parameters["id"]
-                if (id == null) {
-                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID no proporcionado"))
-                    return@get
-                }
+                val id = UUID.fromString(call.parameters["id"])
+                val artist = artistService.getById(id)
 
-                val uuid = try {
-                    UUID.fromString(id)
-                } catch (e: Exception) {
-                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID inválido"))
-                    return@get
-                }
-
-                val artist = artistService.getById(uuid)
                 if (artist != null) {
-                    call.respond(
-                        HttpStatusCode.OK,
-                        ArtistResponse(
-                            id = artist.id.toString(),
-                            name = artist.name,
-                            genre = artist.genre,
-                            image = artist.image
-                        )
-                    )
+                    call.respond(HttpStatusCode.OK, artist)
                 } else {
                     call.respond(HttpStatusCode.NotFound, ErrorResponse("Artista no encontrado"))
                 }
             } catch (e: Exception) {
-                call.respond(
-                    HttpStatusCode.InternalServerError,
-                    ErrorResponse("Error al obtener artista: ${e.message}")
-                )
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID inválido"))
             }
         }
 
-        //  Crear artista (solo ADMIN)
+        // Rutas Protegidas (POST, PUT, DELETE)
         authenticate("auth-jwt") {
+
+            // POST: Crear
             post {
+                //  Validar Rol
+                val principal = call.principal<JWTPrincipal>()
+                if (principal?.payload?.getClaim("role")?.asString() != "ADMIN") {
+                    call.respond(HttpStatusCode.Forbidden, ErrorResponse("No autorizado"))
+                    return@post
+                }
+
                 try {
-                    // Verificar rol de ADMIN
-                    val principal = call.principal<JWTPrincipal>()
-                    val role = principal?.payload?.getClaim("role")?.asString()
+                    //  Variables para recibir datos
+                    var name = ""
+                    var genre = ""
+                    var imageBytes: ByteArray? = null
 
-                    if (role != "ADMIN") {
-                        call.respond(
-                            HttpStatusCode.Forbidden,
-                            ErrorResponse("No tienes permisos para realizar esta acción")
-                        )
+                    //  Procesar Multipart
+                    val multipart = call.receiveMultipart()
+                    multipart.forEachPart { part ->
+                        when (part) {
+                            is PartData.FormItem -> {
+                                when (part.name) {
+                                    "name" -> name = part.value
+                                    "genre" -> genre = part.value
+                                }
+                            }
+                            is PartData.FileItem -> {
+                                if (part.name == "image") {
+                                    imageBytes = part.streamProvider().readBytes()
+                                }
+                            }
+                            else -> part.dispose()
+                        }
+                        part.dispose()
+                    }
+
+                    //  Validar y Crear
+                    if (name.isBlank()) {
+                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("Nombre es obligatorio"))
                         return@post
                     }
 
-                    val request = call.receive<ArtistRequest>()
+                    val newId = artistService.create(name, genre, imageBytes)
 
-                    if (request.name.isBlank()) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("El nombre es obligatorio"))
-                        return@post
-                    }
+                    call.respond(HttpStatusCode.Created, mapOf("id" to newId.toString()))
 
-                    val artistId = artistService.create(request.name, request.genre, request.image)
-
-                    call.respond(
-                        HttpStatusCode.Created,
-                        ArtistResponse(
-                            id = artistId.toString(),
-                            name = request.name,
-                            genre = request.genre,
-                            image = request.image
-                        )
-                    )
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        ErrorResponse("Error al crear artista: ${e.message}")
-                    )
+                    e.printStackTrace() // Útil para ver errores en consola
+                    call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Error interno: ${e.message}"))
                 }
             }
 
-            //  Actualizar artista (solo ADMIN)
+            // PUT: Actualizar
             put("/{id}") {
+                val principal = call.principal<JWTPrincipal>()
+                if (principal?.payload?.getClaim("role")?.asString() != "ADMIN") {
+                    call.respond(HttpStatusCode.Forbidden, ErrorResponse("No autorizado"))
+                    return@put
+                }
+
                 try {
-                    val principal = call.principal<JWTPrincipal>()
-                    val role = principal?.payload?.getClaim("role")?.asString()
+                    val id = UUID.fromString(call.parameters["id"])
 
-                    if (role != "ADMIN") {
-                        call.respond(
-                            HttpStatusCode.Forbidden,
-                            ErrorResponse("No tienes permisos para realizar esta acción")
-                        )
-                        return@put
+                    var name = ""
+                    var genre = ""
+                    var imageBytes: ByteArray? = null
+
+                    val multipart = call.receiveMultipart()
+                    multipart.forEachPart { part ->
+                        when (part) {
+                            is PartData.FormItem -> {
+                                when (part.name) {
+                                    "name" -> name = part.value
+                                    "genre" -> genre = part.value
+                                }
+                            }
+                            is PartData.FileItem -> {
+                                if (part.name == "image") {
+                                    imageBytes = part.streamProvider().readBytes()
+                                }
+                            }
+                            else -> part.dispose()
+                        }
+                        part.dispose()
                     }
 
-                    val id = call.parameters["id"]
-                    if (id == null) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID no proporcionado"))
-                        return@put
-                    }
-
-                    val uuid = try {
-                        UUID.fromString(id)
-                    } catch (e: Exception) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID inválido"))
-                        return@put
-                    }
-
-                    val request = call.receive<ArtistRequest>()
-
-                    if (request.name.isBlank()) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("El nombre es obligatorio"))
-                        return@put
-                    }
-
-                    val updated = artistService.update(uuid, request.name, request.genre, request.image)
+                    val updated = artistService.update(id, name, genre, imageBytes)
 
                     if (updated) {
-                        call.respond(
-                            HttpStatusCode.OK,
-                            MessageResponse("Artista actualizado exitosamente")
-                        )
+                        call.respond(HttpStatusCode.OK, MessageResponse("Artista actualizado"))
                     } else {
-                        call.respond(HttpStatusCode.NotFound, ErrorResponse("Artista no encontrado"))
+                        call.respond(HttpStatusCode.NotFound, ErrorResponse("No encontrado"))
                     }
+
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        ErrorResponse("Error al actualizar artista: ${e.message}")
-                    )
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("Error al actualizar"))
                 }
             }
 
-            // DELETE /artists/{id} - Eliminar artista (solo ADMIN)
+            // DELETE
             delete("/{id}") {
+                val principal = call.principal<JWTPrincipal>()
+                if (principal?.payload?.getClaim("role")?.asString() != "ADMIN") {
+                    call.respond(HttpStatusCode.Forbidden, ErrorResponse("No autorizado"))
+                    return@delete
+                }
+
                 try {
-                    val principal = call.principal<JWTPrincipal>()
-                    val role = principal?.payload?.getClaim("role")?.asString()
-
-                    if (role != "ADMIN") {
-                        call.respond(
-                            HttpStatusCode.Forbidden,
-                            ErrorResponse("No tienes permisos para realizar esta acción")
-                        )
-                        return@delete
-                    }
-
-                    val id = call.parameters["id"]
-                    if (id == null) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID no proporcionado"))
-                        return@delete
-                    }
-
-                    val uuid = try {
-                        UUID.fromString(id)
-                    } catch (e: Exception) {
-                        call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID inválido"))
-                        return@delete
-                    }
-
-                    val deleted = artistService.delete(uuid)
-
-                    if (deleted) {
-                        call.respond(
-                            HttpStatusCode.OK,
-                            MessageResponse("Artista eliminado exitosamente")
-                        )
+                    val id = UUID.fromString(call.parameters["id"])
+                    if (artistService.delete(id)) {
+                        call.respond(HttpStatusCode.OK, MessageResponse("Artista eliminado"))
                     } else {
-                        call.respond(HttpStatusCode.NotFound, ErrorResponse("Artista no encontrado"))
+                        call.respond(HttpStatusCode.NotFound, ErrorResponse("No encontrado"))
                     }
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.InternalServerError,
-                        ErrorResponse("Error al eliminar artista: ${e.message}")
-                    )
+                    call.respond(HttpStatusCode.BadRequest, ErrorResponse("ID inválido"))
                 }
             }
         }
