@@ -1,4 +1,4 @@
-package com.example
+package com.example.plugins
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
@@ -15,7 +15,7 @@ fun Application.configureSecurity() {
     val jwtSecret = "your-secret-key-change-in-production-min-256-bits-long"
 
     authentication {
-        jwt {
+        jwt("auth-jwt") {
             realm = jwtRealm
             verifier(
                 JWT

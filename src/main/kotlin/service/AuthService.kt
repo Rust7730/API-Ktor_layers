@@ -3,50 +3,48 @@ package com.example.service
 import at.favre.lib.crypto.bcrypt.BCrypt
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import com.example.Users
-import com.example.model.User
-import org.jetbrains.exposed.sql.select
-import org.jetbrains.exposed.sql.transactions.transaction
+import com.example.model.LoginRequest
+import com.example.repository.Users
+import kotlinx.coroutines.Dispatchers
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import java.util.*
 
-class AuthService {
-    private val jwtSecret = "your-secret-key-change"
-    private val jwtIssuer = "https://jwt-provider-domain/"
-    private val jwtAudience = "jwt-audience"
-    private val jwtExpirationMs = 86400000L // 24 horas
+class AuthService(
+    private val secret: String,
+    private val issuer: String,
+    private val audience: String
+) {
 
-    fun verifyPassword(password: String, hashedPassword: String): Boolean {
-        return BCrypt.verifyer().verify(password.toCharArray(), hashedPassword).verified
+
+    private suspend fun <T> dbQuery(block: suspend () -> T): T =
+        newSuspendedTransaction(Dispatchers.IO) { block() }
+
+
+    suspend fun login(request: LoginRequest): String? = dbQuery {
+
+        val userRow = Users.select { Users.username eq request.username }
+            .singleOrNull() ?: return@dbQuery null
+
+        val passwordIsValid = BCrypt.verifyer().verify(
+            request.password.toCharArray(),
+            userRow[Users.password]
+        ).verified
+
+        if (passwordIsValid) {
+            generateToken(userRow[Users.username], userRow[Users.role])
+        } else {
+            null
+        }
     }
 
-    fun generateToken(username: String, role: String): String {
+    private fun generateToken(username: String, role: String): String {
         return JWT.create()
-            .withAudience(jwtAudience)
-            .withIssuer(jwtIssuer)
+            .withAudience(audience)
+            .withIssuer(issuer)
             .withClaim("username", username)
             .withClaim("role", role)
-            .withExpiresAt(Date(System.currentTimeMillis() + jwtExpirationMs))
-            .sign(Algorithm.HMAC256(jwtSecret))
-    }
-
-    fun authenticate(username: String, password: String): User? {
-        return transaction {
-            val row = Users.select { Users.username eq username }.singleOrNull()
-
-            row?.let {
-                val user = User(
-                    id = it[Users.id],
-                    username = it[Users.username],
-                    password = it[Users.password],
-                    role = it[Users.role]
-                )
-
-                if (verifyPassword(password, user.password)) {
-                    user
-                } else {
-                    null
-                }
-            }
-        }
+            .withExpiresAt(Date(System.currentTimeMillis() + 86_400_000)) // 24 horas
+            .sign(Algorithm.HMAC256(secret))
     }
 }

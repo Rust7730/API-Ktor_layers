@@ -1,66 +1,51 @@
 package com.example.service
 
-import com.example.Artists
+import com.example.repository.Artists
 import com.example.model.Artist
+import kotlinx.coroutines.Dispatchers
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import java.util.*
 
 class ArtistService {
 
-    // Crear un artista
-    fun create(name: String, genre: String?, image: String?): UUID {
-        return transaction {
-            Artists.insert {
-                it[Artists.name] = name
-                it[Artists.genre] = genre
-                it[Artists.image] = image
-            } get Artists.id
+    private suspend fun <T> dbQuery(block: suspend () -> T): T =
+        newSuspendedTransaction(Dispatchers.IO) { block() }
+
+    suspend fun create(name: String, genre: String?, image: String?): UUID = dbQuery {
+        Artists.insert {
+            it[Artists.name] = name
+            it[Artists.genre] = genre
+            it[Artists.image] = image
+        }[Artists.id]
+    }
+
+    suspend fun getAll(): List<Artist> = dbQuery {
+        Artists.selectAll().map {
+            Artist(it[Artists.id],
+                it[Artists.name],
+                it[Artists.genre],
+                it[Artists.image])
         }
     }
 
-    // Obtener todos los artistas
-    fun getAll(): List<Artist> {
-        return transaction {
-            Artists.selectAll().map { rowToArtist(it) }
-        }
+    suspend fun getById (id: UUID): Artist? = dbQuery{
+        Artists.select {Artists.id eq id }.map {
+            Artist(it[Artists.id],
+                it[Artists.name],
+                it[Artists.genre],
+                it[Artists.image])
+        }.singleOrNull()
     }
-
-    // Obtener un artista por ID
-    fun getById(id: UUID): Artist? {
-        return transaction {
-            Artists.select { Artists.id eq id }
-                .map { rowToArtist(it) }
-                .singleOrNull()
-        }
+    suspend fun update(id: UUID, name: String, genre: String?, image: String?): Boolean = dbQuery {
+        Artists.update({ Artists.id eq id }) {
+            it[Artists.name] = name
+            it[Artists.genre] = genre
+            it[Artists.image] = image
+        } > 0
     }
-
-    // Actualizar un artista
-    fun update(id: UUID, name: String, genre: String?, image: String?): Boolean {
-        return transaction {
-            Artists.update({ Artists.id eq id }) {
-                it[Artists.name] = name
-                it[Artists.genre] = genre
-                it[Artists.image] = image
-            } > 0
-        }
-    }
-
-    // Eliminar un artista
-    fun delete(id: UUID): Boolean {
-        return transaction {
-            Artists.deleteWhere { Artists.id eq id } > 0
-        }
-    }
-
-    // Convertir Row a Artist
-    private fun rowToArtist(row: ResultRow): Artist {
-        return Artist(
-            id = row[Artists.id],
-            name = row[Artists.name],
-            genre = row[Artists.genre],
-            image = row[Artists.image]
-        )
+    suspend fun delete(id: UUID): Boolean = dbQuery {
+        Artists.deleteWhere { Artists.id eq id } > 0
     }
 }
