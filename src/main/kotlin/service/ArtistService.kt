@@ -8,85 +8,55 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import java.util.*
 
-class ArtistService(private val s3Service: S3Service) {
+class ArtistService {
 
     private suspend fun <T> dbQuery(block: suspend () -> T): T =
         newSuspendedTransaction(Dispatchers.IO) { block() }
 
-    suspend fun create(name: String, genre: String?, imageBytes: ByteArray?): UUID {
-        var imageKey: String? = null
-
-        if (imageBytes != null && imageBytes.isNotEmpty()) {
-            val cleanName = name.replace("\\s+".toRegex(), "-").replace("[^a-zA-Z0-9-]".toRegex(), "")
-
-            imageKey = s3Service.uploadFile("artist-$cleanName.jpg", imageBytes, "image/jpeg")
-        }
-        return dbQuery {
-            Artists.insert {
-                it[Artists.name] = name
-                it[Artists.genre] = genre
-                it[Artists.image] = imageKey
-            }[Artists.id]
-        }
+    // CREAR
+    suspend fun create(name: String, genre: String?): UUID = dbQuery {
+        Artists.insert {
+            it[Artists.name] = name
+            it[Artists.genre] = genre
+        }[Artists.id]
     }
 
-
+    // LISTAR
     suspend fun getAll(): List<Artist> {
-        val rows = dbQuery {
-            Artists.selectAll().map { row ->
-                Triple(
-                    row,
-                    row[Artists.image],
-                    null
-                )
-            }
-        }
-
-        return rows.map { (row, key, _) ->
-            rowToArtist(row, key)
+        return dbQuery {
+            Artists.selectAll().map { rowToArtist(it) }
         }
     }
 
+    // OBTENER POR ID
     suspend fun getById(id: UUID): Artist? {
-        val row = dbQuery {
-            Artists.select { Artists.id eq id }.singleOrNull()
-        } ?: return null
-
-        return rowToArtist(row, row[Artists.image])
+        return dbQuery {
+            Artists.select { Artists.id eq id }
+                .map { rowToArtist(it) }
+                .singleOrNull()
+        }
     }
 
-    suspend fun update(id: UUID, name: String, genre: String?, imageBytes: ByteArray?): Boolean {
-        var newImageKey: String? = null
-        if (imageBytes != null && imageBytes.isNotEmpty()) {
-            val cleanName = name.replace("\\s+".toRegex(), "-").replace("[^a-zA-Z0-9-]".toRegex(), "")
-            newImageKey = s3Service.uploadFile("artist-$cleanName-${UUID.randomUUID()}.jpg", imageBytes, "image/jpeg")
-        }
-
+    // ACTUALIZAR
+    suspend fun update(id: UUID, name: String, genre: String?): Boolean {
         return dbQuery {
             Artists.update({ Artists.id eq id }) {
                 it[Artists.name] = name
                 it[Artists.genre] = genre
-                if (newImageKey != null) {
-                    it[Artists.image] = newImageKey
-                }
             } > 0
         }
     }
 
+    // ELIMINAR
     suspend fun delete(id: UUID): Boolean = dbQuery {
         Artists.deleteWhere { Artists.id eq id } > 0
     }
 
-    private suspend fun rowToArtist(row: ResultRow, imageKey: String?): Artist {
-        val signedUrl = imageKey?.let { key ->
-            if (key.startsWith("http")) key else s3Service.getPresignedUrl(key)
-        }
-
+    private fun rowToArtist(row: ResultRow): Artist {
         return Artist(
-            id = row[Artists.id].toString(),
+            id = row[Artists.id],
             name = row[Artists.name],
-            genre = row[Artists.genre],
-            image = signedUrl
+            genre = row[Artists.genre]
         )
     }
 }
