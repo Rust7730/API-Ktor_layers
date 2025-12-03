@@ -1,6 +1,8 @@
 package com.example.plugins
 
+import com.example.repository.Albums
 import com.example.repository.Artists
+import com.example.repository.Tracks
 import com.example.repository.Users
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
@@ -32,6 +34,6 @@ fun Application.configureDatabase() {
     Database.connect(dataSource)
 
     transaction {
-        SchemaUtils.create(Users, Artists)
+        SchemaUtils.create(Users, Artists, Albums,Tracks)
     }
 }

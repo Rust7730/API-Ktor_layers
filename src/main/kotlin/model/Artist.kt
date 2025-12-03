@@ -3,28 +3,24 @@ package com.example.model
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-@Serializable
 data class Artist(
-    val id: String,
+    val id: UUID,
     val name: String,
-    val genre: String?,
-    val image: String?
+    val genre: String?
 )
 
 // DTOs para la API
 @Serializable
 data class ArtistRequest(
     val name: String,
-    val genre: String? = null,
-    val image: String? = null
+    val genre: String? = null
 )
 
 @Serializable
 data class ArtistResponse(
     val id: String,
     val name: String,
-    val genre: String? = null,
-    val image: String? = null
+    val genre: String? = null
 )
 
 @Serializable
