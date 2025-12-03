@@ -14,15 +14,25 @@ object Artists : Table("artists") {
     val id = uuid("id").autoGenerate()
     val name = varchar("name", 255)
     val genre = varchar("genre", 100).nullable()
-    val image = text("image").nullable()
+    // Eliminamos el campo 'image'
     override val primaryKey = PrimaryKey(id)
 }
+
 object Albums : Table("albums") {
     val id = uuid("id").autoGenerate()
-    val name = varchar("name", 255)
-    val year = integer("year")
-    val albumArt = text("album_art").nullable()
+    // Cambiamos 'name' por 'title' para coincidir con Postman
+    val title = varchar("title", 255)
+    // Cambiamos 'year' por 'release_year'
+    val releaseYear = integer("release_year")
     val artistId = uuid("artist_id").references(Artists.id)
+    // Eliminamos el campo 'albumArt'
+    override val primaryKey = PrimaryKey(id)
+}
 
+object Tracks : Table("tracks") {
+    val id = uuid("id").autoGenerate()
+    val title = varchar("title", 255)
+    val duration = integer("duration") // Duración en segundos
+    val albumId = uuid("album_id").references(Albums.id)
     override val primaryKey = PrimaryKey(id)
 }

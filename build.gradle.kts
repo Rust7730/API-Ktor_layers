@@ -31,7 +31,6 @@ dependencies {
     implementation("at.favre.lib:bcrypt:0.10.2")
     implementation("io.ktor:ktor-server-cors:3.3.2")
 
-    implementation("aws.sdk.kotlin:s3:1.0.0")
     implementation("io.ktor:ktor-client-core:3.0.3")
     implementation("io.ktor:ktor-client-cio:3.0.3")
 }
