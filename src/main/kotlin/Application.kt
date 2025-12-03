@@ -9,13 +9,11 @@ import io.ktor.server.netty.*
 import io.ktor.server.routing.routing
 
 fun main(args: Array<String>) = EngineMain.main(args)
+
 fun Application.module() {
     configureDatabase()
     configureSecurity()
     configureSerialization()
-
-
-    val s3Service = S3Service(environment.config)
 
     val authService = AuthService(
         secret = environment.config.property("jwt.secret").getString(),
@@ -23,13 +21,14 @@ fun Application.module() {
         audience = environment.config.property("jwt.audience").getString()
     )
 
-    val artistService = ArtistService(s3Service)
-    val albumService = AlbumService(s3Service)
+    val artistService = ArtistService()
+    val albumService = AlbumService()
+    val trackService = TrackService()
 
     routing {
         authRoutes(authService)
         artistRoutes(artistService)
         albumRoutes(albumService)
-
+        trackRoutes(trackService)
     }
 }
