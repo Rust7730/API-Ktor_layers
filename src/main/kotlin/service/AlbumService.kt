@@ -19,8 +19,9 @@ class AlbumService(private val s3Service: S3Service) {
         var imageKey: String? = null
 
         if (imageBytes != null && imageBytes.isNotEmpty()) {
+            val cleanName = name.replace("\\s+".toRegex(), "-").replace("[^a-zA-Z0-9-]".toRegex(), "")
 
-            imageKey = s3Service.uploadFile("album-$name.jpg", imageBytes, "image/jpeg")
+            imageKey = s3Service.uploadFile("album-$cleanName.jpg", imageBytes, "image/jpeg")
         }
 
         return dbQuery {
@@ -85,9 +86,10 @@ class AlbumService(private val s3Service: S3Service) {
     suspend fun delete(id: UUID): Boolean = dbQuery {
         Albums.deleteWhere { Albums.id eq id } > 0
     }
-
     private suspend fun rowToAlbum(row: ResultRow, imageKey: String?): Album {
-        val signedUrl = imageKey?.let { s3Service.getPresignedUrl(it) }
+        val signedUrl = imageKey?.let { key ->
+            if (key.startsWith("http")) key else s3Service.getPresignedUrl(key)
+        }
 
         return Album(
             id = row[Albums.id].toString(),

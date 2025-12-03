@@ -3,9 +3,9 @@ package com.example.model
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-// Modelo de dominio (base de datos)
+@Serializable
 data class Artist(
-    val id: UUID,
+    val id: String,
     val name: String,
     val genre: String?,
     val image: String?

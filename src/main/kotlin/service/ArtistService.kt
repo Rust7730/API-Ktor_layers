@@ -17,10 +17,10 @@ class ArtistService(private val s3Service: S3Service) {
         var imageKey: String? = null
 
         if (imageBytes != null && imageBytes.isNotEmpty()) {
+            val cleanName = name.replace("\\s+".toRegex(), "-").replace("[^a-zA-Z0-9-]".toRegex(), "")
 
-            imageKey = s3Service.uploadFile("artist-$name.jpg", imageBytes, "image/jpeg")
+            imageKey = s3Service.uploadFile("artist-$cleanName.jpg", imageBytes, "image/jpeg")
         }
-
         return dbQuery {
             Artists.insert {
                 it[Artists.name] = name
@@ -58,7 +58,8 @@ class ArtistService(private val s3Service: S3Service) {
     suspend fun update(id: UUID, name: String, genre: String?, imageBytes: ByteArray?): Boolean {
         var newImageKey: String? = null
         if (imageBytes != null && imageBytes.isNotEmpty()) {
-            newImageKey = s3Service.uploadFile("artist-$name-${UUID.randomUUID()}.jpg", imageBytes, "image/jpeg")
+            val cleanName = name.replace("\\s+".toRegex(), "-").replace("[^a-zA-Z0-9-]".toRegex(), "")
+            newImageKey = s3Service.uploadFile("artist-$cleanName-${UUID.randomUUID()}.jpg", imageBytes, "image/jpeg")
         }
 
         return dbQuery {
@@ -77,10 +78,12 @@ class ArtistService(private val s3Service: S3Service) {
     }
 
     private suspend fun rowToArtist(row: ResultRow, imageKey: String?): Artist {
-        val signedUrl = imageKey?.let { s3Service.getPresignedUrl(it) }
+        val signedUrl = imageKey?.let { key ->
+            if (key.startsWith("http")) key else s3Service.getPresignedUrl(key)
+        }
 
         return Artist(
-            id = row[Artists.id],
+            id = row[Artists.id].toString(),
             name = row[Artists.name],
             genre = row[Artists.genre],
             image = signedUrl
